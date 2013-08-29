@@ -1,0 +1,3 @@
+Simple Recursive Descent arithmetic interpreter
+
+Just run calc.py: ./calc.py or python calc.py
