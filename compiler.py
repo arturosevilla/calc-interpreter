@@ -16,7 +16,7 @@ class UnexpectedToken(Exception):
 
 
 class Token(object):
-    def __init__(self, type_, lexeme):
+    def __init__(self, type_, lexeme=None):
         self.type_ = type_
         self.lexeme = lexeme
 
@@ -24,6 +24,8 @@ class Token(object):
 class TokenType(object):
     NUM = 0
     OP = 1
+    OPEN_PARENS = 2
+    CLOSING_PARENS = 3
 
 
 class Lexer(object):
@@ -59,11 +61,17 @@ class Lexer(object):
         look_ahead = self.next()
         while look_ahead in [' ', '\t', '\n']:
             look_ahead = self.next()
+        if look_ahead == '(':
+            return Token(TokenType.OPEN_PARENS)
+        if look_ahead == ')':
+            return Token(TokenType.CLOSING_PARENS)
+
         if self.is_number(look_ahead):
             number = int(look_ahead)
             look_ahead = self.next()
             while self.is_number(look_ahead):
-                number *= 10 + int(look_ahead)
+                number *= 10
+                number += int(look_ahead)
                 look_ahead = self.next()
             self.unread()
             return Token(TokenType.NUM, number)
@@ -143,7 +151,8 @@ class ConstExpression(Expression):
     def eval(self):
         return self.number
 
-# term -> num factor_rest
+# term -> factor factor_rest
+# factor -> num | (expr)
 # factor_rest-> * num | / num
 # factor_rest -> epsilon
 # *expr -> term term_rest
@@ -162,7 +171,9 @@ class Parser(object):
     def fallback(self, token):
         self._fallback = token
 
-    def match(self, type_, allow_empty=False):
+    def match(self, types, allow_empty=False):
+        if not isinstance(types, list):
+            types = [types]
         if self._fallback is not None:
             token = self._fallback
             self._fallback = None
@@ -170,11 +181,12 @@ class Parser(object):
             token = self.lexer.get_next_token()
         if token is None and allow_empty:
             return None
-        elif token is None or token.type_ != type_:
+        elif token is None or token.type_ not in types:
             if token is None:
                 token_type = '(empty)'
             else:
                 token_type = token.type_
+            self.fallback(token)
             raise UnexpectedToken(token_type)
         return token
     
@@ -186,27 +198,39 @@ class Parser(object):
         return self.term_rest(token)
 
     def term(self):
-        token = self.match(TokenType.NUM)
+        token = self.factor()
         return self.factor_rest(token)
 
-    def factor_rest(self, num):
-        token = self.match(TokenType.OP, True)
+    def factor(self):
+        token = self.match([TokenType.NUM, TokenType.OPEN_PARENS])
+        if token.type_ == TokenType.OPEN_PARENS:
+            expr = self.expr()
+            self.match(TokenType.CLOSING_PARENS)
+            return expr
+        return ConstExpression(token.lexeme)
+
+    def factor_rest(self, factor):
+        try:
+            token = self.match(TokenType.OP, True)
+        except UnexpectedToken:
+            token = None
+
         if token is None:
-            return ConstExpression(num.lexeme)
+            return factor
         if token.lexeme == '*':
             return ProductOperation(
-                ConstExpression(num.lexeme),
+                factor,
                 self.term()
             )
         elif token.lexeme == '/':
             return DifferenceOperation(
-                ConstExpression(num.lexeme),
+                factor,
                 self.term()
             )
 
         else:
             self.fallback(token)
-            return ConstExpression(num.lexeme)
+            return factor
 
     def term_rest(self, term):
         token = self.match(TokenType.OP, True)
