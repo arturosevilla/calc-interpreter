@@ -122,6 +122,18 @@ class ProductOperation(BinaryExpression):
         return self.left.eval() * self.right.eval()
 
 
+class DivisionOperation(BinaryExpression):
+
+    def __init__(self, dividend, divisor):
+        super(DivisionOperation, self).__init__(
+            dividend,
+            divisor
+        )
+
+    def eval(self):
+        return self.left.eval() / self.right.eval()
+
+
 
 class ConstExpression(Expression):
 
@@ -131,9 +143,12 @@ class ConstExpression(Expression):
     def eval(self):
         return self.number
 
-# expr -> num rest
-# rest -> + expr | - expr
-# rest -> epsilon
+# term -> num factor_rest
+# factor_rest-> * num | / num
+# factor_rest -> epsilon
+# *expr -> term term_rest
+# term_rest -> + term | - term
+# term_rest -> epsilon
 # num -> [0-9]+
 
 
@@ -142,10 +157,17 @@ class Parser(object):
 
     def __init__(self, lexer):
         self.lexer = lexer
+        self._fallback = None
 
+    def fallback(self, token):
+        self._fallback = token
 
     def match(self, type_, allow_empty=False):
-        token = self.lexer.get_next_token()
+        if self._fallback is not None:
+            token = self._fallback
+            self._fallback = None
+        else:
+            token = self.lexer.get_next_token()
         if token is None and allow_empty:
             return None
         elif token is None or token.type_ != type_:
@@ -160,24 +182,46 @@ class Parser(object):
         return self.expr()
 
     def expr(self):
-        token = self.match(TokenType.NUM)
-        return self.rest(token)
+        token = self.term()
+        return self.term_rest(token)
 
-    def rest(self, num):
+    def term(self):
+        token = self.match(TokenType.NUM)
+        return self.factor_rest(token)
+
+    def factor_rest(self, num):
         token = self.match(TokenType.OP, True)
         if token is None:
             return ConstExpression(num.lexeme)
+        if token.lexeme == '*':
+            return ProductOperation(
+                ConstExpression(num.lexeme),
+                self.term()
+            )
+        elif token.lexeme == '/':
+            return DifferenceOperation(
+                ConstExpression(num.lexeme),
+                self.term()
+            )
+
+        else:
+            self.fallback(token)
+            return ConstExpression(num.lexeme)
+
+    def term_rest(self, term):
+        token = self.match(TokenType.OP, True)
+        if token is None:
+            return term
         if token.lexeme == '+':
             return SumOperation(
-                ConstExpression(num.lexeme),
-                self.expr()
+                term,
+                self.term()
             )
         elif token.lexeme == '-':
             return DifferenceOperation(
-                ConstExpression(num.lexeme),
-                self.expr()
+                term,
+                self.term()
             )
-
         else:
             raise ValueError('This should not happen!')
 
