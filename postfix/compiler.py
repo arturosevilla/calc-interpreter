@@ -83,113 +83,9 @@ class Lexer(object):
             raise UnknownToken('Unknow token ' + look_ahead)
 
 
-class Expression(object):
-    def eval(self):
-        raise NotImplementedError()
-    def inorder(self):
-        raise NotImplementedError()
-    def postorder(self):
-        raise NotImplementedError()
-
-
-class BinaryExpression(Expression):
-    
-    def __init__(self, left, right):
-        self.left = left
-        self.right = right
-
-
-class SumOperation(BinaryExpression):
-
-    def __init__(self, left, right):
-        super(SumOperation, self).__init__(
-            left,
-            right
-        )
-
-    def eval(self):
-        return self.left.eval() + self.right.eval()
-
-    def inorder(self):
-        return self.left.inorder() + ' + ' + self.right.inorder()
-
-    def postorder(self):
-        return self.left.postorder() + ' ' + self.right.postorder() + ' +'
-
-class DifferenceOperation(BinaryExpression):
-
-    def __init__(self, left, right):
-        super(DifferenceOperation, self).__init__(
-            left,
-            right
-        )
-
-    def eval(self):
-        return self.left.eval() - self.right.eval()
-
-    def inorder(self):
-        return self.left.inorder() + ' - ' + self.right.inorder()
-    def postorder(self):
-        return self.left.postorder() + ' ' + self.right.postorder() + ' -'
-
-
-
-class ProductOperation(BinaryExpression):
-
-    def __init__(self, left, right):
-        super(ProductOperation, self).__init__(
-            left,
-            right
-        )
-
-    def eval(self):
-        return self.left.eval() * self.right.eval()
-
-    def inorder(self):
-        return self.left.inorder() + ' * ' + self.right.inorder()
-
-    def postorder(self):
-        return self.left.postorder() + ' ' + self.right.postorder() + ' *'
-
-
-class DivisionOperation(BinaryExpression):
-
-    def __init__(self, dividend, divisor):
-        super(DivisionOperation, self).__init__(
-            dividend,
-            divisor
-        )
-
-    def eval(self):
-        return self.left.eval() / self.right.eval()
-
-    def inorder(self):
-        return self.left.inorder() + ' / ' + self.right.inorder()
-
-    def postorder(self):
-        return self.left.postorder() + ' ' + self.right.postorder() + ' /'
-
-
-
-
-class ConstExpression(Expression):
-
-    def __init__(self, number):
-        self.number = number
-
-    def eval(self):
-        return self.number
-
-    def inorder(self):
-        return str(self.number)
-
-    def postorder(self):
-        return str(self.number)
-
-
 # term -> factor factor_rest
 # factor -> num | (expr)
-# factor_rest-> * num | / num
+# factor_rest-> * term | / term
 # factor_rest -> epsilon
 # *expr -> term term_rest
 # term_rest -> + term | - term
@@ -233,55 +129,46 @@ class Parser(object):
         token = self.term()
         return self.term_rest(token)
 
-    def term(self):
-        token = self.factor()
-        return self.factor_rest(token)
-
     def factor(self):
         token = self.match([TokenType.NUM, TokenType.OPEN_PARENS])
         if token.type_ == TokenType.OPEN_PARENS:
-            expr = self.expr()
+            translation = self.expr()
             self.match(TokenType.CLOSING_PARENS)
-            return expr
-        return ConstExpression(token.lexeme)
+            return translation
+        return str(token.lexeme)
 
-    def factor_rest(self, factor):
+    def factor_rest(self, expression):
         try:
             token = self.match(TokenType.OP, True)
         except UnexpectedToken:
             token = None
 
         if token is None:
-            return factor
+            return expression
         if token.lexeme == '*':
-            return ProductOperation(
-                factor,
-                self.term()
-            )
+            expression += ' ' + self.term()
+            return expression + ' *'
         elif token.lexeme == '/':
-            return DifferenceOperation(
-                factor,
-                self.term()
-            )
-
+            expression += ' ' + self.term()
+            return expression + ' /'
         else:
             self.fallback(token)
-            return factor
+            return expression
 
-    def term_rest(self, term):
+    def term(self):
+        token = self.factor()
+        return self.factor_rest(token)
+
+    def term_rest(self, expression):
         token = self.match(TokenType.OP, True)
         if token is None:
-            return term
+            return expression
         if token.lexeme == '+':
-            return SumOperation(
-                term,
-                self.term()
-            )
+            expression += ' ' + self.term()
+            return expression + ' +'
         elif token.lexeme == '-':
-            return DifferenceOperation(
-                term,
-                self.term()
-            )
+            expression += ' ' + self.term()
+            return expression + ' -'
         else:
             raise ValueError('This should not happen!')
 
@@ -289,7 +176,3 @@ class Parser(object):
     def reset(self):
         self.lexer.reset()
 
-    def eval(self):
-        ast = self.parse()
-        return ast.eval()
-        
